@@ -73,7 +73,9 @@ def render(counts, fixed_text, generated=None):
 
 def chunk(body, limit=MAX_CHARS):
     """Split on line boundaries; never mid-line and never inside a <pre> block
-    if avoidable. Fail closed on an over-long line."""
+    if avoidable. Fail closed on an empty body or an over-long line."""
+    if not isinstance(body, str) or not body.strip():
+        raise ValueError("empty pulse")
     if len(body) <= limit:
         return [body]
     parts, current, in_pre = [], "", False
