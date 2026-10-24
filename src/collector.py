@@ -34,6 +34,24 @@ def _fetch_count(token, org, state_qualifier, opener):
     return count
 
 
+def _fetch_org_created(token, org, opener):
+    request = urllib.request.Request(
+        "https://api.github.com/orgs/" + urllib.parse.quote(org, safe=""),
+        headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "hourly-pulse-collector",
+        },
+    )
+    with opener(request, timeout=30) as response:
+        item = json.load(response)
+    created = item.get("created_at")
+    if not isinstance(created, str):
+        raise ValueError("unverified org response")
+    parsed = dt.datetime.fromisoformat(created.replace("Z", "+00:00"))
+    return parsed.isoformat()
+
+
 def collect_counts(token, org, opener=urllib.request.urlopen, now=None):
     if not token or not org:
         raise ValueError("token and org are required")
@@ -46,5 +64,6 @@ def collect_counts(token, org, opener=urllib.request.urlopen, now=None):
         "total": total,
         "open": opened,
         "closed": closed,
+        "org_created_at": _fetch_org_created(token, org, opener),
         "snapshot_at": (now or dt.datetime.now(CAIRO)).isoformat(),
     }
