@@ -1,0 +1,31 @@
+name: hourly-pulse
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: tests
+        run: python3 -m unittest discover -s tests -v
+        env:
+          PYTHONPATH: src
+      - name: collect and send
+        env:
+          PULSE_GH_READ_TOKEN: ${{ secrets.PULSE_GH_READ_TOKEN }}
+          PULSE_GH_ORG: ${{ secrets.PULSE_GH_ORG }}
+          PULSE_TG_BOT_TOKEN: ${{ secrets.PULSE_TG_BOT_TOKEN }}
+          PULSE_TG_CHAT_ID: ${{ secrets.PULSE_TG_CHAT_ID }}
+          PULSE_TG_TOPIC_ID: ${{ secrets.PULSE_TG_TOPIC_ID }}
+          PULSE_TEXT_KEY: ${{ secrets.PULSE_TEXT_KEY }}
+        run: python3 src/pulse_main.py
