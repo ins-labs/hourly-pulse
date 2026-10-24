@@ -11,9 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import collector
 import crypto_util
 import renderer
-import work_source
 import sender
-import work_table
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ENC_FILE = REPO_ROOT / "content" / "standing_text.enc"
@@ -42,10 +40,8 @@ def main():
         raise SystemExit("missing bindings: " + ", ".join(missing))
 
     counts = collector.collect_counts(gh_token, gh_org)
-    work = work_table.collect_work_table(gh_token, gh_org)
     fixed_text = crypto_util.decrypt_text(text_key, ENC_FILE.read_text())
-    curated = work_source.load()
-    body = renderer.render(counts, work, curated, fixed_text)
+    body = renderer.render(counts, fixed_text)
     parts = renderer.chunk(body)
     receipts = sender.send_pulse(bot_token, chat_id, topic_id, parts)
     print("pulse sent: chunks=" + str(len(receipts)) + " message_ids=" + ",".join(str(r) for r in receipts))
