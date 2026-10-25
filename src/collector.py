@@ -64,6 +64,7 @@ def collect_counts(token, org, opener=urllib.request.urlopen, now=None):
         "total": total,
         "open": opened,
         "closed": closed,
+        "org": org,
         "org_created_at": _fetch_org_created(token, org, opener),
         "snapshot_at": (now or dt.datetime.now(CAIRO)).isoformat(),
     }
