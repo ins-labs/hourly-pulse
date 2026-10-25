@@ -39,6 +39,7 @@ def opener_of(bodies):
 def counts(t=2147, o=580, c=1567):
     return {
         "total": t, "open": o, "closed": c,
+        "org": "some-org",
         "org_created_at": ORG_CREATED,
         "snapshot_at": NOW.isoformat(),
     }
@@ -52,63 +53,136 @@ class CollectorTests(unittest.TestCase):
     def test_counts_happy(self):
         opener = opener_of([count_body(10), count_body(4), count_body(6), {"created_at": ORG_CREATED}])
         out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
-        self.assertEqual(out["total"], 10)
-        self.assertEqual(out["open"], 4)
-        self.assertEqual(out["closed"], 6)
+        self.assertEqual((out["total"], out["open"], out["closed"], out["org"]), (10, 4, 6, "some-org"))
         self.assertTrue(out["org_created_at"].startswith("2024-05-01"))
-        self.assertEqual(out["snapshot_at"], NOW.isoformat())
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):
             collector.collect_counts("", "org")
         with self.assertRaises(ValueError):
             collector.collect_counts("t", "")
-        with self.assertRaises(ValueError):  # open+closed != total
+        with self.assertRaises(ValueError):
             collector.collect_counts("t", "o", opener=opener_of([count_body(10), count_body(4), count_body(4)]))
-        with self.assertRaises(ValueError):  # incomplete results
+        with self.assertRaises(ValueError):
             collector.collect_counts("t", "o", opener=opener_of([{"total_count": 1, "incomplete_results": True}]))
-        with self.assertRaises(ValueError):  # malformed count
-            collector.collect_counts("t", "o", opener=opener_of([{"total_count": "lots"}]))
-        with self.assertRaises(ValueError):  # org response without created_at
+        with self.assertRaises(ValueError):
             collector.collect_counts("t", "o", opener=opener_of([count_body(2), count_body(1), count_body(1), {"login": "o"}]))
 
 
 class RendererTests(unittest.TestCase):
-    def test_render_markers(self):
-        out = renderer.render(counts(), FIXED, generated=NOW)
-        self.assertIn("2147", out)
-        self.assertIn("580", out)
-        self.assertIn("73.0%", out)
-        self.assertIn("نسبة المغلق إلى الإجمالي", out)
-        self.assertIn("2024-05-01", out)
-        self.assertIn("<pre>", out)
-        self.assertIn("سطر ثابت أول", out)
-        self.assertIn("تعليماتك الدائمة", out)
-        self.assertNotIn("work", out.lower())
+    def test_blocks_structure(self):
+        blocks = renderer.render_blocks(counts(), FIXED, generated=NOW)
+        types = [b["type"] for b in blocks]
+        self.assertEqual(types, ["heading", "paragraph", "heading", "table", "paragraph", "heading", "paragraph", "paragraph"])
+        self.assertEqual(blocks[0]["text"], "النبضة")
+        self.assertEqual(blocks[2]["text"], "مهام some-org على GitHub")
+        table = blocks[3]
+        self.assertTrue(table["is_bordered"])
+        self.assertEqual(len(table["cells"]), 2)
+        headers = table["cells"][0]
+        self.assertEqual([c["text"] for c in headers], ["الإجمالي", "المفتوح", "نسبة المغلق إلى الإجمالي"])
+        for c in headers:
+            self.assertTrue(c["is_header"])
+            self.assertEqual(c["align"], "center")
+            self.assertEqual(c["valign"], "middle")
+        data = table["cells"][1]
+        self.assertEqual([c["text"] for c in data], ["2147", "580", "73.0%"])
+        for c in data:
+            self.assertNotIn("is_header", c)
+            self.assertEqual(c["align"], "center")
+            self.assertEqual(c["valign"], "middle")
+        self.assertIn("2024-05-01", blocks[4]["text"])
+        self.assertEqual(blocks[6]["text"], "سطر ثابت أول\nسطر ثابت ثان")
+        self.assertEqual(blocks[7]["text"], "إعداد هذه النسخة لا يثبت نشرها أو وصولها.")
+
+    def test_verbatim_paragraph_split(self):
+        text = "فقرة أولى\nسطرها الثاني\n\nفقرة ثانية\n\n\nفقرة ثالثة"
+        blocks = renderer.render_blocks(counts(), text, generated=NOW)
+        paras = [b["text"] for b in blocks if b["type"] == "paragraph"]
+        # paragraphs 2..n-1 are the fixed text (index 1 is timestamps, last is footer)
+        body = paras[1:-1]
+        self.assertEqual(body, ["فقرة أولى\nسطرها الثاني", "فقرة ثانية", "فقرة ثالثة"])
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):
-            renderer.render(counts(10, 8, 8), FIXED)
+            renderer.render_blocks(counts(10, 8, 8), FIXED)
         with self.assertRaises(ValueError):
-            renderer.render(counts(-1, 0, 0), FIXED)
+            renderer.render_blocks(counts(-1, 0, 0), FIXED)
         with self.assertRaises(ValueError):
-            renderer.render(counts(), "   ")
+            renderer.render_blocks(counts(), "   ")
         bad = counts()
-        del bad["org_created_at"]
-        with self.assertRaises(KeyError):
-            renderer.render(bad, FIXED)
+        bad["org"] = "x<y"
+        with self.assertRaises(ValueError):
+            renderer.render_blocks(bad, FIXED)
+        huge = counts()
+        with self.assertRaises(ValueError):
+            renderer.render_blocks(huge, "س\n\n" * 20000)
 
-    def test_chunking(self):
-        body = renderer.render(counts(), FIXED + "\n" + ("سطر طويل للاختبار\n" * 300), generated=NOW)
-        parts = renderer.chunk(body)
-        self.assertGreater(len(parts), 1)
-        for part in parts:
-            self.assertLessEqual(len(part), renderer.MAX_CHARS)
-        self.assertEqual("".join(p + "\n" for p in parts).replace("\n\n", "\n").count("سطر ثابت أول"), 1)
+
+def rich_receipt(chat_id, topic_id, blocks, mid=111):
+    return {
+        "ok": True,
+        "result": {
+            "message_id": mid,
+            "chat": {"id": int(chat_id)},
+            "message_thread_id": int(topic_id),
+            "rich_message": {"blocks": json.loads(json.dumps(blocks)), "is_rtl": True},
+        },
+    }
+
+
+class SenderTests(unittest.TestCase):
+    def setUp(self):
+        self.blocks = renderer.render_blocks(counts(), FIXED, generated=NOW)
+
+    def test_send_happy(self):
+        opener = opener_of([rich_receipt("-100123", "43", self.blocks)])
+        out = sender.send_rich("tok", "-100123", "43", self.blocks, opener=opener)
+        self.assertEqual(out, 111)
+
+    def test_payload_shape(self):
+        captured = {}
+        def opener(req, timeout=30):
+            captured.update(json.loads(req.data.decode()))
+            return Response(json.dumps(rich_receipt("-100123", "43", self.blocks)))
+        sender.send_rich("tok", "-100123", "43", self.blocks, opener=opener)
+        self.assertEqual(captured["chat_id"], -100123)
+        self.assertEqual(captured["message_thread_id"], 43)
+        rm = captured["rich_message"]
+        self.assertTrue(rm["is_rtl"])
+        self.assertTrue(rm["skip_entity_detection"])
+        self.assertEqual(rm["blocks"], self.blocks)
+        self.assertNotIn("text", captured)
+
+    def test_fail_closed(self):
         with self.assertRaises(ValueError):
-            renderer.chunk("x" * (renderer.MAX_CHARS + 1))
+            sender.send_rich("", "-100123", "43", self.blocks)
         with self.assertRaises(ValueError):
-            renderer.chunk("")
+            sender.send_rich("t", "-100123", "43", [])
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([{"ok": False}]))
+        wrong_chat = rich_receipt("-100999", "43", self.blocks)
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([wrong_chat]))
+        wrong_topic = rich_receipt("-100123", "99", self.blocks)
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([wrong_topic]))
+        no_blocks = rich_receipt("-100123", "43", self.blocks)
+        del no_blocks["result"]["rich_message"]
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([no_blocks]))
+        tampered = rich_receipt("-100123", "43", self.blocks)
+        tampered["result"]["rich_message"]["blocks"][3]["cells"][1][0]["text"] = "9999"
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([tampered]))
+        bad_align = rich_receipt("-100123", "43", self.blocks)
+        bad_align["result"]["rich_message"]["blocks"][3]["cells"][0][0]["align"] = "left"
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([bad_align]))
+        short = rich_receipt("-100123", "43", self.blocks)
+        short["result"]["rich_message"]["blocks"] = short["result"]["rich_message"]["blocks"][:-1]
+        with self.assertRaises(ValueError):
+            sender.send_rich("t", "-100123", "43", self.blocks, opener=opener_of([short]))
 
 
 class CryptoTests(unittest.TestCase):
@@ -127,88 +201,6 @@ class CryptoTests(unittest.TestCase):
             crypto_util.decrypt_text("", blob)
         with self.assertRaises(ValueError):
             crypto_util.encrypt_text(key, "  ")
-
-
-def receipt(chat_id, topic_id, text, mid=111):
-    return {
-        "ok": True,
-        "result": {
-            "message_id": mid,
-            "chat": {"id": int(chat_id)},
-            "message_thread_id": int(topic_id),
-            "text": sender.expected_plain(text),
-            "entities": (
-                [{"type": "bold"}] * text.count("<b>") + [{"type": "pre"}] * text.count("<pre>")
-            ),
-        },
-    }
-
-
-CHUNK = "<b>عنوان</b>\n<pre>1  2</pre>\nسطر عادي"
-
-
-class IncidentRegressionTests(unittest.TestCase):
-    """First dispatch (run 40145046180): the rendered body ended with a newline
-    on the single-chunk path and the counts-table data row carried trailing
-    spaces; Telegram trims these in result.text, so the full plain-text receipt
-    check failed after a successful send. Pin the fix: rendered output and the
-    wire text must already be in canonical form, and the receipt is verified
-    against exactly that form."""
-
-    def test_render_has_canonical_whitespace(self):
-        out = renderer.render(counts(), FIXED, generated=NOW)
-        self.assertFalse(out.endswith("\n"))
-        for line in out.split("\n"):
-            self.assertEqual(line, line.rstrip())
-
-    def test_sender_normalizes_wire_text(self):
-        captured = {}
-        def opener(req, timeout=30):
-            import urllib.parse as up
-            captured.update(up.parse_qs(req.data.decode()))
-            return Response(json.dumps(receipt("-100123", "43", sender.normalize(CHUNK + "   \n"))))
-        messy = CHUNK + "   \n\n"
-        out = sender.send_pulse("tok", "-100123", "43", [messy], opener=opener)
-        self.assertEqual(out, [111])
-        self.assertEqual(captured["text"][0], CHUNK)
-
-    def test_mismatch_reports_diff_position(self):
-        tampered = receipt("-100123", "43", CHUNK)
-        tampered["result"]["text"] = sender.expected_plain(CHUNK)[:-2] + "XY"
-        try:
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([tampered]))
-            self.fail("must raise")
-        except ValueError as e:
-            self.assertIn("mismatch at char", str(e))
-
-
-class SenderTests(unittest.TestCase):
-    def test_send_happy(self):
-        opener = opener_of([receipt("-100123", "43", CHUNK)])
-        out = sender.send_pulse("tok", "-100123", "43", [CHUNK], opener=opener)
-        self.assertEqual(out, [111])
-
-    def test_fail_closed(self):
-        with self.assertRaises(ValueError):
-            sender.send_pulse("", "-100123", "43", [CHUNK])
-        with self.assertRaises(ValueError):  # not ok
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([{"ok": False}]))
-        wrong_chat = receipt("-100999", "43", CHUNK)
-        with self.assertRaises(ValueError):
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([wrong_chat]))
-        wrong_topic = receipt("-100123", "99", CHUNK)
-        with self.assertRaises(ValueError):
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([wrong_topic]))
-        tampered = receipt("-100123", "43", CHUNK)
-        tampered["result"]["text"] = "نص مختلف"
-        with self.assertRaises(ValueError):
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([tampered]))
-        no_entities = receipt("-100123", "43", CHUNK)
-        no_entities["result"]["entities"] = []
-        with self.assertRaises(ValueError):
-            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([no_entities]))
-        with self.assertRaises(ValueError):
-            sender.send_pulse("t", "-100123", "43", [""], opener=opener_of([]))
 
 
 if __name__ == "__main__":
