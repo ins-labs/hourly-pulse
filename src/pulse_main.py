@@ -41,10 +41,9 @@ def main():
 
     counts = collector.collect_counts(gh_token, gh_org)
     fixed_text = crypto_util.decrypt_text(text_key, ENC_FILE.read_text())
-    body = renderer.render(counts, fixed_text)
-    parts = renderer.chunk(body)
-    receipts = sender.send_pulse(bot_token, chat_id, topic_id, parts)
-    print("pulse sent: chunks=" + str(len(receipts)) + " message_ids=" + ",".join(str(r) for r in receipts))
+    blocks = renderer.render_blocks(counts, fixed_text)
+    message_id = sender.send_rich(bot_token, chat_id, topic_id, blocks)
+    print("pulse sent: rich message_id=" + str(message_id) + " blocks=" + str(len(blocks)))
 
 
 if __name__ == "__main__":
