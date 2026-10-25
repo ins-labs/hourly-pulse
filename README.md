@@ -2,10 +2,10 @@
 
 A fully deterministic, LLM-free hourly pulse: on the hour, GitHub Actions
 collects the organization's lifetime GitHub issue counts (total / open /
-closed / closed-percentage, issues only - never pull requests), renders a
-fixed-format Arabic summary with the owner's approved standing text, and
-sends it through a Telegram bot to a configured topic. No data, names, or
-private content live in this repository; all bindings are secrets.
+closed-percentage, issues only - never pull requests), renders a fixed-format
+Arabic summary with the owner's approved standing text, and sends it through a
+Telegram bot to a configured forum topic. No data, names, or private content
+live in this repository; all bindings are secrets.
 
 ## How it works
 
@@ -17,11 +17,17 @@ private content live in this repository; all bindings are secrets.
    account.
 2. `src/crypto_util.py` decrypts `content/standing_text.enc` at runtime with
    `PULSE_TEXT_KEY`. Failure fails the run.
-3. `src/renderer.py` renders the pulse and splits it on line boundaries under
-   the Telegram message budget.
-4. `src/sender.py` posts each chunk with `message_thread_id` and verifies the
-   API receipt: ok flag, message id, destination chat id, thread id, full
-   echoed plain text, and formatting entities. Any failure fails the run.
+3. `src/renderer.py` builds explicit Telegram Rich Message blocks: headings,
+   a native bordered table for the three metrics, and the standing text as
+   verbatim paragraphs (split only on blank lines; no markup parser touches
+   the approved text). Rich Messages are a Bot API 10.1+ feature with native
+   tables; an earlier HTML `<pre>` design was retired after real-client pixel
+   inspection showed clipping, and no image rendering is used anywhere.
+4. `src/sender.py` posts one `sendRichMessage` call (RTL, entity detection
+   off) and verifies the receipt structurally: ok flag, message id, chat id,
+   thread id, block count and types, full plain text of every block, and the
+   table's exact cells, header flags, alignment, and border. Any mismatch
+   fails the run.
 
 ## Secrets (all required)
 
