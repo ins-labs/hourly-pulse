@@ -351,5 +351,32 @@ class CryptoTests(unittest.TestCase):
             crypto_util.encrypt_text(key, "  ")
 
 
+class ScheduleGuardTests(unittest.TestCase):
+    def test_schedule_event_exits_before_any_work(self):
+        """A schedule-event run must return cleanly before any binding check,
+        collect or send (issue #16; keyed on platform GITHUB_EVENT_NAME)."""
+        import os
+
+        import pulse_main
+
+        def forbidden(*a, **k):
+            raise AssertionError("schedule-event run touched collect/send")
+
+        old_event = os.environ.get("GITHUB_EVENT_NAME")
+        old_collect, old_send = collector.collect_counts, sender.send_rich
+        collector.collect_counts = forbidden
+        sender.send_rich = forbidden
+        os.environ["GITHUB_EVENT_NAME"] = "schedule"
+        try:
+            pulse_main.main()
+        finally:
+            collector.collect_counts = old_collect
+            sender.send_rich = old_send
+            if old_event is None:
+                del os.environ["GITHUB_EVENT_NAME"]
+            else:
+                os.environ["GITHUB_EVENT_NAME"] = old_event
+
+
 if __name__ == "__main__":
     unittest.main()
