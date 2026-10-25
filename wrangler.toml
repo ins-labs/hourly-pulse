@@ -1,0 +1,15 @@
+name = "hourly-pulse-dispatcher"
+main = "src/worker.js"
+compatibility_date = "2024-05-01"
+
+# Checked-in deployment config must be cron-inactive by default.
+# Refer to docs/runbook.md for the separate activation template.
+triggers = { crons = [] }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hourly-pulse-claims-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+[vars]
+GITHUB_TOKEN = "" # Token env placeholder only; no values checked into repo.
