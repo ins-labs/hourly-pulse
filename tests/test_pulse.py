@@ -67,24 +67,37 @@ def ev_other(name, issue_id, ts):
 
 
 def make_opener(repos, events_by_repo, count_bodies, org_body=None):
+    """Fake transport routed on the URL path, query-insensitive.
+
+    Mirrors the exact endpoints the collector calls:
+      GET /orgs/{org}/repos?per_page=100&page=N          -> repos (page 1; then [])
+      GET /repos/{owner}/{repo}/issues/events?...        -> events_by_repo[repo][page-1]
+      GET /search/issues?q=...&per_page=1                -> next count body, in call order
+      GET /orgs/{org}                                    -> org body
+    Unknown paths fail the test loudly instead of falling through.
+    """
+    import urllib.parse as up
     counts = iter(count_bodies)
     seen = []
+
     def opener(req, timeout=30):
         url = req.full_url
         seen.append(url)
-        if "/search/issues" in url:
+        parsed = up.urlparse(url)
+        parts = [p for p in parsed.path.split("/") if p]
+        page = int(up.parse_qs(parsed.query).get("page", ["1"])[0])
+        if parts == ["search", "issues"]:
             return Response(json.dumps(next(counts)))
-        if "/issues/events" in url:
-            repo = url.split("/repos/")[1].split("/")[0].split("/")[-1]
-            repo = repo.split("/")[-1]
-            import urllib.parse as up
-            repo = up.unquote(url.split("/repos/")[1].split("/issues/events")[0].split("/")[1])
-            page = int(up.parse_qs(up.urlparse(url).query).get("page", ["1"])[0])
-            pages = events_by_repo[repo]
+        if len(parts) == 5 and parts[0] == "repos" and parts[3] == "issues" and parts[4] == "events":
+            repo = up.unquote(parts[2])
+            pages = events_by_repo.get(repo, [[]])
             return Response(json.dumps(pages[page - 1] if page <= len(pages) else []))
-        if url.rstrip("/").endswith("/repos"):
-            return Response(json.dumps(repos))
-        return Response(json.dumps(org_body if org_body is not None else {"created_at": ORG_CREATED}))
+        if len(parts) == 3 and parts[0] == "orgs" and parts[2] == "repos":
+            return Response(json.dumps(repos if page == 1 else []))
+        if len(parts) == 2 and parts[0] == "orgs":
+            return Response(json.dumps(org_body if org_body is not None else {"created_at": ORG_CREATED}))
+        raise AssertionError("fake opener received unexpected URL: " + url)
+
     opener.seen = seen
     return opener
 
