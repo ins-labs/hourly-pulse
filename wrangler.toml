@@ -1,0 +1,16 @@
+name = "hourly-pulse-dispatcher"
+main = "src/worker.js"
+compatibility_date = "2024-05-01"
+
+# Checked-in deployment config must be cron-inactive by default.
+# Refer to docs/runbook.md for secret binding instructions and separate activation template.
+triggers = { crons = [] }
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hourly-pulse-claims-db"
+database_id = "PLACEHOLDER_D1_DATABASE_ID"
+
+# Secret credentials (such as GITHUB_TOKEN) MUST be bound via secret management:
+#   npx wrangler secret put GITHUB_TOKEN
+# Do NOT place credentials in [vars] or check secrets into repository files.
