@@ -115,7 +115,7 @@ class CollectorTests(unittest.TestCase):
                 ev_other("reopened", 30, "2026-10-24T23:00:00Z"),
             ]],
             "r2": [[
-                ev_closed(20, "2026-10-24T22:00:00Z"),            # in 24h + 7d, not 3h
+                ev_closed(20, "2026-10-24T22:00:00Z"),            # 22:00Z is within 3h of the 23:07Z snapshot: in ALL windows
                 ev_closed(21, "2026-10-24T23:05:00Z"),            # in 3h too
                 ev_closed(21, "2026-10-24T23:06:00Z"),            # second cycle: still one issue
                 ev_closed(22, "2026-10-24T23:09:00Z"),            # after snapshot: excluded
@@ -127,8 +127,10 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(out["org"], "some-org")
         self.assertTrue(out["org_created_at"].startswith("2024-05-01"))
         self.assertEqual([r["label"] for r in out["rows"]], ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"])
+        # boundaries verified by datetime computation against the 2026-10-24T23:07:00Z
+        # snapshot: 3h start is 20:07Z, so issue 20 (22:00Z) and 21 (23:05Z) both count
         self.assertEqual([(r["opened"], r["still_open"], r["closed"]) for r in out["rows"]],
-                         [(10, 4, 4), (5, 2, 3), (3, 1, 2), (1, 0, 1)])
+                         [(10, 4, 4), (5, 2, 3), (3, 1, 2), (1, 0, 2)])
 
     def test_window_qualifier(self):
         opener = make_opener([{"name": "r1"}], {"r1": [[]]}, [count_body(0)] * 8)
@@ -186,8 +188,10 @@ class CollectorTests(unittest.TestCase):
             collector.collect_counts("t", "o", opener=make_opener([], {}, [{"total_count": 1, "incomplete_results": True}]))
         with self.assertRaises(ValueError):
             collector.collect_counts("t", "o", opener=make_opener([], {}, [count_body(2), count_body(3)]))
+        # window total above lifetime: the collector fetches ALL eight counts
+        # before the post-loop invariant check, so the queue needs all eight
         with self.assertRaises(ValueError):
-            collector.collect_counts("t", "o", opener=make_opener([], {}, [count_body(2), count_body(1)] + [count_body(9), count_body(1)]))
+            collector.collect_counts("t", "o", opener=make_opener([], {}, [count_body(2), count_body(1)] + [count_body(9), count_body(1)] + [count_body(0)] * 4))
         # org response without created_at fails closed after all searches
         with self.assertRaises(ValueError):
             collector.collect_counts("t", "o", opener=make_opener([], {}, [count_body(0)] * 8, org_body={"login": "o"}))
