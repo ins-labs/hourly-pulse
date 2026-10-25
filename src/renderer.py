@@ -1,16 +1,20 @@
-"""Deterministic pulse renderer.
+"""Deterministic pulse renderer: emits explicit Rich Message blocks.
 
-FORMAT STATUS: HTML <pre> blocks via parse_mode=HTML are the PROVISIONAL
-native-readable table format pending the verified historical publisher
-contract; do not treat as the approved format until that contract lands. No user data lives in this
-repository: fixed text arrives decrypted at runtime, all numbers arrive
-from collectors.
+FORMAT: native Telegram Rich Messages (Bot API 10.1+, official contract).
+Earlier HTML <pre> rendering was retired after real-client pixel inspection
+showed clipping/Arabic-shaping distortion; an earlier claim that the Bot API
+had no table capability was stale - the Rich Messages surface has native
+bordered tables. Explicit blocks are used (not markdown/html) so no parser
+sits between the approved text and Telegram: user text goes in verbatim.
 """
 import datetime as dt
+import re
 from zoneinfo import ZoneInfo
 
 CAIRO = ZoneInfo("Africa/Cairo")
-MAX_CHARS = 3800  # Telegram message budget with headroom under 4096
+MAX_RICH_CHARS = 32768  # official rich-message text budget
+MAX_BLOCKS = 500
+MAX_TABLE_COLS = 20
 
 
 def _stamp(value):
@@ -20,24 +24,33 @@ def _stamp(value):
     return parsed
 
 
-def _table(headers, rows):
-    """Fixed-width monospace table for a <pre> block."""
-    widths = [len(h) for h in headers]
-    for row in rows:
-        for i, cell in enumerate(row):
-            widths[i] = max(widths[i], len(str(cell)))
-    def fmt(row):
-        # Never pad the last column: no line may carry trailing spaces.
-        cells = [str(cell).ljust(widths[i]) if i < len(row) - 1 else str(cell) for i, cell in enumerate(row)]
-        return "  ".join(cells)
-    lines = [fmt(headers), "  ".join("-" * w for w in widths)]
-    lines += [fmt(row) for row in rows]
-    return "\n".join(lines)
+def _cell(text, header=False):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("empty table cell")
+    cell = {"text": text, "align": "center", "valign": "middle"}
+    if header:
+        cell["is_header"] = True
+    return cell
 
 
-def render(counts, fixed_text, generated=None):
+def _para(text):
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("empty paragraph")
+    return {"type": "paragraph", "text": text.strip()}
+
+
+def _heading(text, size):
+    if size not in (1, 2, 3, 4, 5, 6):
+        raise ValueError("invalid heading size")
+    return {"type": "heading", "text": text, "size": size}
+
+
+def render_blocks(counts, fixed_text, generated=None):
+    """Build the full rich-message block list. Fail closed on any invalid input."""
     _stamp(counts["snapshot_at"])
     _stamp(counts["org_created_at"])
+    if not isinstance(counts.get("org"), str) or not counts["org"].strip() or any(c in counts["org"] for c in "<>&"):
+        raise ValueError("invalid org name")
     for key in ("total", "open", "closed"):
         if type(counts.get(key)) is not int or counts[key] < 0:
             raise ValueError("invalid count")
@@ -49,54 +62,39 @@ def render(counts, fixed_text, generated=None):
     ratio = "{:.1f}%".format(100 * counts["closed"] / counts["total"]) if counts["total"] else "غير متاحة"
     read_at = _stamp(counts["snapshot_at"]).astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S")
     created = _stamp(counts["org_created_at"]).astimezone(CAIRO).strftime("%Y-%m-%d")
-    parts = [
-        "<b>النبضة</b>",
-        "",
-        "وقت قراءة الأرقام: " + read_at + " القاهرة.",
-        "أُعدّت النسخة: " + generated.astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S") + " القاهرة.",
-        "",
-        "<b>مهام ins-labs على GitHub</b>",
-        "",
-        "<pre>" + _table(
-            ["الإجمالي", "المفتوح", "نسبة المغلق إلى الإجمالي"],
-            [[str(counts["total"]), str(counts["open"]), ratio]],
-        ) + "</pre>",
-        "",
-        "إشيوز GitHub فقط (لا طلبات دمج)، من كل مستودعات المؤسسة المرئية لحساب القراءة، منذ إنشاء ins-labs في " + created + " حتى وقت القراءة أعلاه. الأرقام لقطة لحظتها وليست إثبات نشاط أو اكتمال.",
-        "",
-        "<b>تعليماتك الدائمة</b>",
-        "",
-        fixed_text.strip(),
-        "",
-        "إعداد هذه النسخة لا يثبت نشرها أو وصولها.",
+
+    blocks = [
+        _heading("النبضة", 2),
+        _para("وقت قراءة الأرقام: " + read_at + " القاهرة.\nأُعدّت النسخة: " + generated.astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S") + " القاهرة."),
+        _heading("مهام " + counts["org"] + " على GitHub", 3),
+        {
+            "type": "table",
+            "is_bordered": True,
+            "cells": [
+                [_cell("الإجمالي", True), _cell("المفتوح", True), _cell("نسبة المغلق إلى الإجمالي", True)],
+                [_cell(str(counts["total"])), _cell(str(counts["open"])), _cell(ratio)],
+            ],
+        },
+        _para("إشيوز GitHub فقط (لا طلبات دمج)، من كل مستودعات المؤسسة المرئية لحساب القراءة، منذ إنشاء " + counts["org"] + " في " + created + " حتى وقت القراءة أعلاه. الأرقام لقطة لحظتها وليست إثبات نشاط أو اكتمال."),
+        _heading("تعليماتك الدائمة", 3),
     ]
-    return "\n".join(parts)
+    # Fixed text verbatim: split on blank-line runs into paragraph blocks
+    # (a run of 2+ newlines, possibly with whitespace, is one separator), so no
+    # paragraph ever starts or ends with separator newlines. Wording untouched.
+    for chunk in re.split(r"\n[ \t]*\n(?:[ \t]*\n)*", fixed_text.strip()):
+        blocks.append(_para(chunk))
+    blocks.append(_para("إعداد هذه النسخة لا يثبت نشرها أو وصولها."))
 
-
-def chunk(body, limit=MAX_CHARS):
-    """Split on line boundaries; never mid-line and never inside a <pre> block
-    if avoidable. Fail closed on an empty body or an over-long line."""
-    if not isinstance(body, str) or not body.strip():
-        raise ValueError("empty pulse")
-    if len(body) <= limit:
-        return [body]
-    parts, current, in_pre = [], "", False
-    for line in body.split("\n"):
-        if len(line) > limit:
-            raise ValueError("single line exceeds send budget")
-        if "<pre>" in line:
-            in_pre = True
-        closing = "</pre>" in line
-        if len(current) + len(line) + 1 > limit and not in_pre:
-            parts.append(current.rstrip("\n"))
-            current = ""
-        current += line + "\n"
-        if closing:
-            in_pre = False
-    if current.strip():
-        parts.append(current.rstrip("\n"))
-    if not parts:
-        raise ValueError("empty pulse")
-    if any(len(part) > limit for part in parts):
-        raise ValueError("unsplittable block exceeds send budget")
-    return parts
+    if len(blocks) > MAX_BLOCKS:
+        raise ValueError("block budget exceeded")
+    total_chars = 0
+    for block in blocks:
+        if block["type"] == "table":
+            if any(len(row) > MAX_TABLE_COLS for row in block["cells"]):
+                raise ValueError("table column budget exceeded")
+            total_chars += sum(len(c["text"]) for row in block["cells"] for c in row)
+        else:
+            total_chars += len(block["text"])
+    if total_chars > MAX_RICH_CHARS:
+        raise ValueError("rich text budget exceeded")
+    return blocks
