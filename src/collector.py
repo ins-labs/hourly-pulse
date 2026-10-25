@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 CAIRO = ZoneInfo("Africa/Cairo")
 SEARCH_API = "https://api.github.com/search/issues"
 ORG_API = "https://api.github.com/orgs/"
+REPO_API = "https://api.github.com/repos/"  # issue events live under /repos/{owner}/{repo}, NOT /orgs/... (404)
 MAX_EVENT_PAGES = 500  # hard budget guard; measured whole-org need is ~85
 
 # (Arabic row label, window length or None for org lifetime). Labels are the
@@ -116,7 +117,7 @@ def _scan_close_events(token, org, repos, snapshot, opener):
             if total_pages > MAX_EVENT_PAGES:
                 raise ValueError("event page budget exceeded")
             batch = _get_json(
-                ORG_API + urllib.parse.quote(org, safe="") + "/repos/"
+                REPO_API + urllib.parse.quote(org, safe="") + "/"
                 + urllib.parse.quote(repo, safe="")
                 + "/issues/events?per_page=100&page=" + str(page),
                 token, opener,
