@@ -77,25 +77,27 @@ def render_blocks(counts, fixed_text, generated=None):
     generated = generated or dt.datetime.now(CAIRO)
     stamp = generated.astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S")
 
+    # owner column order/headers, exact 04:44:07: each metric next to its own
+    # ratio, no "(الى اجمالي الفترة)" wording in the headers.
     cells = [[
-        _cell("المدة", True),
+        _cell("الفترة", True),
         _cell("الإجمالي", True),
         _cell("المفتوح", True),
-        _cell("تم الغلق", True),
-        _cell("نسبة المفتوح (الى اجمالي الفترة)", True),
-        _cell("نسبة الاغلاق (إلى إجمالي الفترة)", True),
+        _cell("نسبة المفتوح", True),
+        _cell("المغلق", True),
+        _cell("نسبة الغلق", True),
     ]]
     for row in counts["rows"]:
         # owner definitions, final 04:15:14: الإجمالي = created in the window
         # whatever their state; المفتوح = created in the window and STILL open;
-        # تم الغلق = distinct issues with a close event in the window; ratios
-        # to the window total, closed ratio may exceed 100%.
+        # المغلق = distinct issues with a close event in the window; both
+        # ratios are to the window total, closed ratio may exceed 100%.
         cells.append([
             _cell(row["label"]),
             _cell(str(row["opened"])),
             _cell(str(row["still_open"])),
-            _cell(str(row["closed"])),
             _cell(_ratio(row["opened"], row["still_open"])),
+            _cell(str(row["closed"])),
             _cell(_ratio(row["opened"], row["closed"])),
         ])
 

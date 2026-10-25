@@ -210,19 +210,20 @@ class RendererTests(unittest.TestCase):
         self.assertTrue(table["is_bordered"])
         self.assertEqual(len(table["cells"]), 5)
         headers = table["cells"][0]
-        self.assertEqual([c["text"] for c in headers], ["المدة", "الإجمالي", "المفتوح", "تم الغلق", "نسبة المفتوح (الى اجمالي الفترة)", "نسبة الاغلاق (إلى إجمالي الفترة)"])
+        self.assertEqual([c["text"] for c in headers], ["الفترة", "الإجمالي", "المفتوح", "نسبة المفتوح", "المغلق", "نسبة الغلق"])
         for c in headers:
             self.assertTrue(c["is_header"])
             self.assertEqual(c["align"], "center")
             self.assertEqual(c["valign"], "middle")
         self.assertEqual([r[0]["text"] for r in table["cells"][1:]],
                          ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"])
-        self.assertEqual([c["text"] for c in table["cells"][1]], ["منذ البداية", "2147", "584", "1567", "27.2%", "73.0%"])
-        self.assertEqual([c["text"] for c in table["cells"][2]], ["آخر ٧ أيام", "100", "40", "60", "40.0%", "60.0%"])
-        self.assertEqual([c["text"] for c in table["cells"][3]], ["آخر ٢٤ ساعة", "12", "5", "7", "41.7%", "58.3%"])
+        # owner column order 04:44:07: metric then its ratio, per pair
+        self.assertEqual([c["text"] for c in table["cells"][1]], ["منذ البداية", "2147", "584", "27.2%", "1567", "73.0%"])
+        self.assertEqual([c["text"] for c in table["cells"][2]], ["آخر ٧ أيام", "100", "40", "40.0%", "60", "60.0%"])
+        self.assertEqual([c["text"] for c in table["cells"][3]], ["آخر ٢٤ ساعة", "12", "5", "41.7%", "7", "58.3%"])
         # zero-total window: truthful غير متاحة, never 0.0% or division by zero;
         # closed may exceed opened (backlog closing) without failing
-        self.assertEqual([c["text"] for c in table["cells"][4]], ["آخر ٣ ساعات", "0", "0", "3", "غير متاحة", "غير متاحة"])
+        self.assertEqual([c["text"] for c in table["cells"][4]], ["آخر ٣ ساعات", "0", "0", "غير متاحة", "3", "غير متاحة"])
         for r in table["cells"][1:]:
             for c in r:
                 self.assertNotIn("is_header", c)
