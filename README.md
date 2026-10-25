@@ -1,26 +1,34 @@
 # hourly-pulse
 
 A fully deterministic, LLM-free hourly pulse: on the hour, GitHub Actions
-collects the organization's lifetime GitHub issue counts (total / open /
-closed-percentage, issues only - never pull requests), renders a fixed-format
+collects the organization's GitHub issue counts (total / open / closed /
+closed-percentage, issues only - never pull requests) over four creation
+windows: org lifetime, last 7 days, last 24 hours, last 3 hours, renders a fixed-format
 Arabic summary with the owner's approved standing text, and sends it through a
 Telegram bot to a configured forum topic. No data, names, or private content
 live in this repository; all bindings are secrets.
 
 ## How it works
 
-1. `src/collector.py` reads org-wide issue counts via the GitHub search API
-   plus the org creation date via the org API. The window is the org's whole
-   lifetime: from its creation to the moment the pulse is generated. Partial,
+1. `src/collector.py` measures four windows (org lifetime, 7 days, 24 hours,
+   3 hours), all anchored to one snapshot: issues created in the window and
+   how many of those are still open (search API), and distinct issues with a
+   close event in the window regardless of when they were created. Close
+   counts come from each repo's full issue-events history - never from the
+   search `closed:` qualifier, which indexes only the current closed_at and
+   would miss issues closed then reopened (such issues exist in this org). A
+   hard page budget fails the run if event volume ever explodes. Partial,
    malformed, or mutually inconsistent responses fail the run; no cached
    numbers are ever reused. Coverage is every repository visible to the read
    account.
 2. `src/crypto_util.py` decrypts `content/standing_text.enc` at runtime with
    `PULSE_TEXT_KEY`. Failure fails the run.
-3. `src/renderer.py` builds explicit Telegram Rich Message blocks: headings,
-   a native bordered table for the three metrics, and the standing text as
-   verbatim paragraphs (split only on blank lines; no markup parser touches
-   the approved text). Rich Messages are a Bot API 10.1+ feature with native
+3. `src/renderer.py` builds explicit Telegram Rich Message blocks: a
+   timestamp heading, the org heading, a native bordered table of the
+   window metrics (total / still open / closed / both ratios to the window
+   total), the standing text as verbatim paragraphs (split only on blank
+   lines; no markup parser touches the approved text, and its section titles
+   live only inside the encrypted payload), and a fixed footer. Rich Messages are a Bot API 10.1+ feature with native
    tables; an earlier HTML `<pre>` design was retired after real-client pixel
    inspection showed clipping, and no image rendering is used anywhere.
 4. `src/sender.py` posts one `sendRichMessage` call (RTL, entity detection

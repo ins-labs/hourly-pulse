@@ -6,6 +6,14 @@ showed clipping/Arabic-shaping distortion; an earlier claim that the Bot API
 had no table capability was stale - the Rich Messages surface has native
 bordered tables. Explicit blocks are used (not markdown/html) so no parser
 sits between the approved text and Telegram: user text goes in verbatim.
+
+LAYOUT (owner-approved example, 2026-10-25 revision): one dynamic timestamp
+heading, the org heading, the bordered windowed metrics table (org lifetime,
+7 days, 24 hours, 3 hours - one row per creation window; total, open, closed,
+and closed-to-total ratio columns), then the standing
+text verbatim - including its own section titles, which therefore live only
+inside the encrypted payload and never as literals in this public repo -
+then a fixed footer. No coverage-disclaimer paragraph: the owner dropped it.
 """
 import datetime as dt
 import re
@@ -45,38 +53,56 @@ def _heading(text, size):
     return {"type": "heading", "text": text, "size": size}
 
 
+def _ratio(total, closed):
+    return "{:.1f}%".format(100 * closed / total) if total else "غير متاحة"
+
+
 def render_blocks(counts, fixed_text, generated=None):
     """Build the full rich-message block list. Fail closed on any invalid input."""
     _stamp(counts["snapshot_at"])
     _stamp(counts["org_created_at"])
     if not isinstance(counts.get("org"), str) or not counts["org"].strip() or any(c in counts["org"] for c in "<>&"):
         raise ValueError("invalid org name")
-    for key in ("total", "open", "closed"):
-        if type(counts.get(key)) is not int or counts[key] < 0:
-            raise ValueError("invalid count")
-    if counts["open"] + counts["closed"] != counts["total"]:
-        raise ValueError("count mismatch")
-    if not isinstance(fixed_text, str) or not fixed_text.strip():
-        raise ValueError("fixed text unavailable")
+    rows = counts.get("rows")
+    if not isinstance(rows, list) or len(rows) != 4:
+        raise ValueError("invalid window rows")
+    for row in rows:
+        if not isinstance(row.get("label"), str) or not row["label"].strip():
+            raise ValueError("invalid window label")
+        for key in ("opened", "still_open", "closed"):
+            if type(row.get(key)) is not int or row[key] < 0:
+                raise ValueError("invalid window count")
+        if row["still_open"] > row["opened"]:
+            raise ValueError("still-open exceeds opened")
     generated = generated or dt.datetime.now(CAIRO)
-    ratio = "{:.1f}%".format(100 * counts["closed"] / counts["total"]) if counts["total"] else "غير متاحة"
-    read_at = _stamp(counts["snapshot_at"]).astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S")
-    created = _stamp(counts["org_created_at"]).astimezone(CAIRO).strftime("%Y-%m-%d")
+    stamp = generated.astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S")
+
+    cells = [[
+        _cell("المدة", True),
+        _cell("الإجمالي", True),
+        _cell("المفتوح", True),
+        _cell("تم الغلق", True),
+        _cell("نسبة المفتوح (الى اجمالي الفترة)", True),
+        _cell("نسبة الاغلاق (إلى إجمالي الفترة)", True),
+    ]]
+    for row in counts["rows"]:
+        # owner definitions, final 04:15:14: الإجمالي = created in the window
+        # whatever their state; المفتوح = created in the window and STILL open;
+        # تم الغلق = distinct issues with a close event in the window; ratios
+        # to the window total, closed ratio may exceed 100%.
+        cells.append([
+            _cell(row["label"]),
+            _cell(str(row["opened"])),
+            _cell(str(row["still_open"])),
+            _cell(str(row["closed"])),
+            _cell(_ratio(row["opened"], row["still_open"])),
+            _cell(_ratio(row["opened"], row["closed"])),
+        ])
 
     blocks = [
-        _heading("النبضة", 2),
-        _para("وقت قراءة الأرقام: " + read_at + " القاهرة.\nأُعدّت النسخة: " + generated.astimezone(CAIRO).strftime("%Y-%m-%d %H:%M:%S") + " القاهرة."),
+        _heading("نبضة " + stamp + " القاهرة", 2),
         _heading("مهام " + counts["org"] + " على GitHub", 3),
-        {
-            "type": "table",
-            "is_bordered": True,
-            "cells": [
-                [_cell("الإجمالي", True), _cell("المفتوح", True), _cell("نسبة المغلق إلى الإجمالي", True)],
-                [_cell(str(counts["total"])), _cell(str(counts["open"])), _cell(ratio)],
-            ],
-        },
-        _para("إشيوز GitHub فقط (لا طلبات دمج)، من كل مستودعات المؤسسة المرئية لحساب القراءة، منذ إنشاء " + counts["org"] + " في " + created + " حتى وقت القراءة أعلاه. الأرقام لقطة لحظتها وليست إثبات نشاط أو اكتمال."),
-        _heading("تعليماتك الدائمة", 3),
+        {"type": "table", "is_bordered": True, "cells": cells},
     ]
     # Fixed text verbatim: split on blank-line runs into paragraph blocks
     # (a run of 2+ newlines, possibly with whitespace, is one separator), so no
