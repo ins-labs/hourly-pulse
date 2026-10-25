@@ -39,7 +39,10 @@ def opener_of(bodies):
 def counts(rows=None):
     if rows is None:
         rows = [(2147, 584, 1567), (100, 40, 60), (12, 5, 7), (0, 0, 3)]
-    labels = ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"]
+    # one label per row - zip against a fixed 4-label list would silently
+    # truncate a longer fixture and hide the invalid row count (CI catch)
+    base = ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"]
+    labels = [base[i] if i < len(base) else "row " + str(i) for i in range(len(rows))]
     return {
         "rows": [{"label": l, "opened": a, "still_open": b, "closed": c} for l, (a, b, c) in zip(labels, rows)],
         "org": "some-org",
