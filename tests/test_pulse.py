@@ -98,10 +98,15 @@ class RendererTests(unittest.TestCase):
     def test_verbatim_paragraph_split(self):
         text = "فقرة أولى\nسطرها الثاني\n\nفقرة ثانية\n\n\nفقرة ثالثة"
         blocks = renderer.render_blocks(counts(), text, generated=NOW)
+        # exact paragraph order against the actual renderer contract:
+        # timestamps, coverage disclaimer, fixed text verbatim, footer
         paras = [b["text"] for b in blocks if b["type"] == "paragraph"]
-        # paragraphs 2..n-1 are the fixed text (index 1 is timestamps, last is footer)
-        body = paras[1:-1]
-        self.assertEqual(body, ["فقرة أولى\nسطرها الثاني", "فقرة ثانية", "فقرة ثالثة"])
+        self.assertEqual(len(paras), 6)
+        self.assertTrue(paras[0].startswith("وقت قراءة الأرقام: "))
+        self.assertIn("القاهرة", paras[0])
+        self.assertTrue(paras[1].startswith("إشيوز GitHub فقط (لا طلبات دمج)"))
+        self.assertEqual(paras[2:-1], ["فقرة أولى\nسطرها الثاني", "فقرة ثانية", "فقرة ثالثة"])
+        self.assertEqual(paras[-1], "إعداد هذه النسخة لا يثبت نشرها أو وصولها.")
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):
