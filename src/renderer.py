@@ -8,6 +8,7 @@ bordered tables. Explicit blocks are used (not markdown/html) so no parser
 sits between the approved text and Telegram: user text goes in verbatim.
 """
 import datetime as dt
+import re
 from zoneinfo import ZoneInfo
 
 CAIRO = ZoneInfo("Africa/Cairo")
@@ -77,9 +78,10 @@ def render_blocks(counts, fixed_text, generated=None):
         _para("إشيوز GitHub فقط (لا طلبات دمج)، من كل مستودعات المؤسسة المرئية لحساب القراءة، منذ إنشاء " + counts["org"] + " في " + created + " حتى وقت القراءة أعلاه. الأرقام لقطة لحظتها وليست إثبات نشاط أو اكتمال."),
         _heading("تعليماتك الدائمة", 3),
     ]
-    # Fixed text verbatim: split only on blank lines into paragraph blocks;
-    # concatenation of paragraph texts with blank lines reproduces the input.
-    for chunk in fixed_text.strip().split("\n\n"):
+    # Fixed text verbatim: split on blank-line runs into paragraph blocks
+    # (a run of 2+ newlines, possibly with whitespace, is one separator), so no
+    # paragraph ever starts or ends with separator newlines. Wording untouched.
+    for chunk in re.split(r"\n[ \t]*\n(?:[ \t]*\n)*", fixed_text.strip()):
         blocks.append(_para(chunk))
     blocks.append(_para("إعداد هذه النسخة لا يثبت نشرها أو وصولها."))
 
