@@ -18,6 +18,14 @@ ENC_FILE = REPO_ROOT / "content" / "standing_text.enc"
 
 
 def main():
+    # Clock-cutover guard (issue #16): the GitHub schedule trigger is retired.
+    # A schedule-event run must never send; keyed on the platform-provided
+    # event name, never on workflow inputs. Runs queued before the cron
+    # removal snapshot the old code and are handled by the cutover drain.
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule":
+        print("schedule-event run: send rejected (GitHub clock retired)")
+        return
+
     gh_token = os.environ.get("PULSE_GH_READ_TOKEN", "")
     gh_org = os.environ.get("PULSE_GH_ORG", "")
     bot_token = os.environ.get("PULSE_TG_BOT_TOKEN", "")
