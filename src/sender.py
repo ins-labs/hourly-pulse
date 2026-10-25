@@ -24,7 +24,23 @@ def expected_entities(text):
     return {"bold": text.count("<b>"), "pre": text.count("<pre>")}
 
 
+def normalize(text):
+    """Canonical wire form: no trailing spaces on any line, no leading/trailing
+    blank space on the whole message. Telegram trims these in result.text; we
+    never send them, so sent == expected == returned under that benign
+    normalization."""
+    return "\n".join(line.rstrip() for line in text.strip().splitlines())
+
+
+def _diff_index(want, got):
+    for i, (a, b) in enumerate(zip(want, got)):
+        if a != b:
+            return i
+    return min(len(want), len(got))
+
+
 def send_chunk(token, chat_id, topic_id, text, opener=urllib.request.urlopen):
+    text = normalize(text)
     if not expected_plain(text).strip():
         raise ValueError("empty chunk")
     payload = urllib.parse.urlencode(
@@ -54,8 +70,14 @@ def send_chunk(token, chat_id, topic_id, text, opener=urllib.request.urlopen):
         raise ValueError("receipt chat mismatch")
     if str(result.get("message_thread_id")) != str(topic_id):
         raise ValueError("receipt topic mismatch")
-    if result.get("text") != expected_plain(text):
-        raise ValueError("receipt plain-text mismatch")
+    expected = expected_plain(text)
+    got_text = result.get("text")
+    if got_text != expected:
+        at = _diff_index(expected, got_text if isinstance(got_text, str) else "")
+        raise ValueError(
+            "receipt plain-text mismatch at char " + str(at)
+            + " (expected len " + str(len(expected)) + ", got len " + str(len(got_text or "")) + ")"
+        )
     want = expected_entities(text)
     got = {"bold": 0, "pre": 0}
     for entity in result.get("entities") or []:

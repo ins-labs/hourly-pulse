@@ -147,6 +147,41 @@ def receipt(chat_id, topic_id, text, mid=111):
 CHUNK = "<b>عنوان</b>\n<pre>1  2</pre>\nسطر عادي"
 
 
+class IncidentRegressionTests(unittest.TestCase):
+    """First dispatch (run 40145046180): the rendered body ended with a newline
+    on the single-chunk path and the counts-table data row carried trailing
+    spaces; Telegram trims these in result.text, so the full plain-text receipt
+    check failed after a successful send. Pin the fix: rendered output and the
+    wire text must already be in canonical form, and the receipt is verified
+    against exactly that form."""
+
+    def test_render_has_canonical_whitespace(self):
+        out = renderer.render(counts(), FIXED, generated=NOW)
+        self.assertFalse(out.endswith("\n"))
+        for line in out.split("\n"):
+            self.assertEqual(line, line.rstrip())
+
+    def test_sender_normalizes_wire_text(self):
+        captured = {}
+        def opener(req, timeout=30):
+            import urllib.parse as up
+            captured.update(up.parse_qs(req.data.decode()))
+            return Response(json.dumps(receipt("-100123", "43", sender.normalize(CHUNK + "   \n"))))
+        messy = CHUNK + "   \n\n"
+        out = sender.send_pulse("tok", "-100123", "43", [messy], opener=opener)
+        self.assertEqual(out, [111])
+        self.assertEqual(captured["text"][0], CHUNK)
+
+    def test_mismatch_reports_diff_position(self):
+        tampered = receipt("-100123", "43", CHUNK)
+        tampered["result"]["text"] = sender.expected_plain(CHUNK)[:-2] + "XY"
+        try:
+            sender.send_pulse("t", "-100123", "43", [CHUNK], opener=opener_of([tampered]))
+            self.fail("must raise")
+        except ValueError as e:
+            self.assertIn("mismatch at char", str(e))
+
+
 class SenderTests(unittest.TestCase):
     def test_send_happy(self):
         opener = opener_of([receipt("-100123", "43", CHUNK)])

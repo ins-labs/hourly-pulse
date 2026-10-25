@@ -27,7 +27,9 @@ def _table(headers, rows):
         for i, cell in enumerate(row):
             widths[i] = max(widths[i], len(str(cell)))
     def fmt(row):
-        return "  ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row))
+        # Never pad the last column: no line may carry trailing spaces.
+        cells = [str(cell).ljust(widths[i]) if i < len(row) - 1 else str(cell) for i, cell in enumerate(row)]
+        return "  ".join(cells)
     lines = [fmt(headers), "  ".join("-" * w for w in widths)]
     lines += [fmt(row) for row in rows]
     return "\n".join(lines)
@@ -68,7 +70,7 @@ def render(counts, fixed_text, generated=None):
         "",
         "إعداد هذه النسخة لا يثبت نشرها أو وصولها.",
     ]
-    return "\n".join(parts) + "\n"
+    return "\n".join(parts)
 
 
 def chunk(body, limit=MAX_CHARS):
