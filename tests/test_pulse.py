@@ -41,7 +41,7 @@ def counts(rows=None):
         rows = [(2147, 584, 1567), (100, 40, 60), (12, 5, 7), (0, 0, 3)]
     # one label per row - zip against a fixed 4-label list would silently
     # truncate a longer fixture and hide the invalid row count (CI catch)
-    base = ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"]
+    base = ["Since the beginning", "Last 7 days", "Last 24 hours", "Last 3 hours"]
     labels = [base[i] if i < len(base) else "row " + str(i) for i in range(len(rows))]
     return {
         "rows": [{"label": l, "opened": a, "still_open": b, "closed": c} for l, (a, b, c) in zip(labels, rows)],
@@ -126,7 +126,7 @@ class CollectorTests(unittest.TestCase):
         out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
         self.assertEqual(out["org"], "some-org")
         self.assertTrue(out["org_created_at"].startswith("2024-05-01"))
-        self.assertEqual([r["label"] for r in out["rows"]], ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"])
+        self.assertEqual([r["label"] for r in out["rows"]], ["Since the beginning", "Last 7 days", "Last 24 hours", "Last 3 hours"])
         # boundaries verified by datetime computation against the 2026-10-24T23:07:00Z
         # snapshot: 3h start is 20:07Z, so issue 20 (22:00Z) and 21 (23:05Z) both count
         self.assertEqual([(r["opened"], r["still_open"], r["closed"]) for r in out["rows"]],
@@ -202,35 +202,46 @@ class RendererTests(unittest.TestCase):
         blocks = renderer.render_blocks(counts(), FIXED, generated=NOW)
         types = [b["type"] for b in blocks]
         self.assertEqual(types, ["heading", "heading", "table", "paragraph", "paragraph"])
-        self.assertEqual(blocks[0]["text"], "نبضة 2026-10-25 02:07:00 القاهرة")
+        self.assertEqual(blocks[0]["text"], "Pulse 2026-10-25 02:07:00 Cairo")
         self.assertEqual(blocks[0]["size"], 2)
-        self.assertEqual(blocks[1]["text"], "مهام some-org على GitHub")
+        self.assertEqual(blocks[1]["text"], "some-org tasks on GitHub")
         self.assertEqual(blocks[1]["size"], 3)
         table = blocks[2]
         self.assertTrue(table["is_bordered"])
         self.assertEqual(len(table["cells"]), 5)
         headers = table["cells"][0]
-        self.assertEqual([c["text"] for c in headers], ["الفترة", "الإجمالي", "المفتوح", "نسبة المفتوح", "المغلق", "نسبة الغلق"])
+        self.assertEqual([c["text"] for c in headers], ["Period", "Total", "Open", "Open ratio", "Closed", "Closed ratio"])
         for c in headers:
             self.assertTrue(c["is_header"])
             self.assertEqual(c["align"], "center")
             self.assertEqual(c["valign"], "middle")
         self.assertEqual([r[0]["text"] for r in table["cells"][1:]],
-                         ["منذ البداية", "آخر ٧ أيام", "آخر ٢٤ ساعة", "آخر ٣ ساعات"])
+                         ["Since the beginning", "Last 7 days", "Last 24 hours", "Last 3 hours"])
         # owner column order 04:44:07: metric then its ratio, per pair
-        self.assertEqual([c["text"] for c in table["cells"][1]], ["منذ البداية", "2147", "584", "27.2%", "1567", "73.0%"])
-        self.assertEqual([c["text"] for c in table["cells"][2]], ["آخر ٧ أيام", "100", "40", "40.0%", "60", "60.0%"])
-        self.assertEqual([c["text"] for c in table["cells"][3]], ["آخر ٢٤ ساعة", "12", "5", "41.7%", "7", "58.3%"])
+        self.assertEqual([c["text"] for c in table["cells"][1]], ["Since the beginning", "2147", "584", "27.2%", "1567", "73.0%"])
+        self.assertEqual([c["text"] for c in table["cells"][2]], ["Last 7 days", "100", "40", "40.0%", "60", "60.0%"])
+        self.assertEqual([c["text"] for c in table["cells"][3]], ["Last 24 hours", "12", "5", "41.7%", "7", "58.3%"])
         # zero-total window: truthful غير متاحة, never 0.0% or division by zero;
         # closed may exceed opened (backlog closing) without failing
-        self.assertEqual([c["text"] for c in table["cells"][4]], ["آخر ٣ ساعات", "0", "0", "غير متاحة", "3", "غير متاحة"])
+        self.assertEqual([c["text"] for c in table["cells"][4]], ["Last 3 hours", "0", "0", "N/A", "3", "N/A"])
         for r in table["cells"][1:]:
             for c in r:
                 self.assertNotIn("is_header", c)
                 self.assertEqual(c["align"], "center")
                 self.assertEqual(c["valign"], "middle")
         self.assertEqual(blocks[3]["text"], "سطر ثابت أول\nسطر ثابت ثان")
-        self.assertEqual(blocks[4]["text"], "إعداد هذه النسخة لا يثبت نشرها أو وصولها.")
+        self.assertEqual(blocks[4]["text"], "Preparing this version does not prove it was published or received.")
+
+    def test_english_render_and_backlog_ratio(self):
+        # Generic test content, never the private standing paragraphs.
+        blocks = renderer.render_blocks(counts([(1, 1, 3)] * 4),
+                                        "Standing test paragraph.\n\nSecond test paragraph.",
+                                        generated=NOW)
+        texts = sender.expected_block_texts(blocks)
+        self.assertTrue(all(text.isascii() for text in texts))
+        self.assertEqual([b["text"] for b in blocks if b["type"] == "paragraph"][:-1],
+                         ["Standing test paragraph.", "Second test paragraph."])
+        self.assertEqual(blocks[2]["cells"][1][5]["text"], "300.0%")
 
     def test_verbatim_paragraph_split(self):
         text = "فقرة أولى\nسطرها الثاني\n\nفقرة ثانية\n\n\nفقرة ثالثة"
@@ -241,7 +252,7 @@ class RendererTests(unittest.TestCase):
         paras = [b["text"] for b in blocks if b["type"] == "paragraph"]
         self.assertEqual(len(paras), 4)
         self.assertEqual(paras[:-1], ["فقرة أولى\nسطرها الثاني", "فقرة ثانية", "فقرة ثالثة"])
-        self.assertEqual(paras[-1], "إعداد هذه النسخة لا يثبت نشرها أو وصولها.")
+        self.assertEqual(paras[-1], "Preparing this version does not prove it was published or received.")
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):
@@ -274,7 +285,7 @@ def rich_receipt(chat_id, topic_id, blocks, mid=111):
             "message_id": mid,
             "chat": {"id": int(chat_id)},
             "message_thread_id": int(topic_id),
-            "rich_message": {"blocks": json.loads(json.dumps(blocks)), "is_rtl": True},
+            "rich_message": {"blocks": json.loads(json.dumps(blocks)), "is_rtl": False},
         },
     }
 
@@ -297,10 +308,19 @@ class SenderTests(unittest.TestCase):
         self.assertEqual(captured["chat_id"], -100123)
         self.assertEqual(captured["message_thread_id"], 43)
         rm = captured["rich_message"]
-        self.assertTrue(rm["is_rtl"])
+        self.assertFalse(rm["is_rtl"])
         self.assertTrue(rm["skip_entity_detection"])
         self.assertEqual(rm["blocks"], self.blocks)
         self.assertNotIn("text", captured)
+
+    def test_failed_receipt_never_retries(self):
+        calls = []
+        def opener(req, timeout=30):
+            calls.append(req)
+            return Response(json.dumps({"ok": False}))
+        with self.assertRaises(ValueError):
+            sender.send_rich("tok", "-100123", "43", self.blocks, opener=opener)
+        self.assertEqual(len(calls), 1)
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):

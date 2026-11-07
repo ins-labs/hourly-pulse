@@ -53,7 +53,7 @@ def send_rich(token, chat_id, topic_id, blocks, opener=urllib.request.urlopen):
     payload = json.dumps({
         "chat_id": int(chat_id),
         "message_thread_id": int(topic_id),
-        "rich_message": {"blocks": blocks, "is_rtl": True, "skip_entity_detection": True},
+        "rich_message": {"blocks": blocks, "is_rtl": False, "skip_entity_detection": True},
     }).encode()
     request = urllib.request.Request(
         API + "/bot" + token + "/sendRichMessage",
