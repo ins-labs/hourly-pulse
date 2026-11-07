@@ -325,6 +325,17 @@ class SenderTests(unittest.TestCase):
             sender.send_rich("tok", "-100123", "43", self.blocks,
                              opener=opener_of([receipt]))
 
+    def test_receipt_rejects_changed_cell_boundaries(self):
+        blocks = json.loads(json.dumps(self.blocks))
+        blocks[2]["cells"][1][0]["text"] = "first\x1fsecond"
+        blocks[2]["cells"][1][1]["text"] = "third"
+        receipt = rich_receipt("-100123", "43", blocks)
+        row = receipt["result"]["rich_message"]["blocks"][2]["cells"][1]
+        row[0]["text"], row[1]["text"] = "first", "second\x1fthird"
+        with self.assertRaisesRegex(ValueError, "table cell text mismatch"):
+            sender.send_rich("tok", "-100123", "43", blocks,
+                             opener=opener_of([receipt]))
+
     def test_failed_receipt_never_retries(self):
         calls = []
         def opener(req, timeout=30):
