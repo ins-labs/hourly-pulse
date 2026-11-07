@@ -81,6 +81,16 @@ def send_rich(token, chat_id, topic_id, blocks, opener=urllib.request.urlopen):
     for i, (want_block, got_block) in enumerate(zip(blocks, got_blocks)):
         if got_block.get("type") != want_block["type"]:
             raise ValueError("receipt block " + str(i) + " type mismatch")
+        if want_block["type"] == "table":
+            got_cells = got_block.get("cells")
+            if not isinstance(got_cells, list) or len(got_cells) != len(want_block["cells"]):
+                raise ValueError("receipt table row-count mismatch")
+            for want_row, got_row in zip(want_block["cells"], got_cells):
+                if not isinstance(got_row, list) or len(got_row) != len(want_row):
+                    raise ValueError("receipt table column-count mismatch")
+                for want_cell, got_cell in zip(want_row, got_row):
+                    if not isinstance(got_cell, dict) or _plain(got_cell.get("text", "")) != _plain(want_cell.get("text", "")):
+                        raise ValueError("receipt table cell text mismatch")
         if _block_text(got_block) != want_texts[i]:
             raise ValueError("receipt block " + str(i) + " text mismatch")
         if want_block["type"] == "table":
