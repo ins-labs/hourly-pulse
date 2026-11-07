@@ -4,7 +4,7 @@ A fully deterministic, LLM-free hourly pulse: on the hour, GitHub Actions
 collects the organization's GitHub issue counts (total / open / closed /
 closed-percentage, issues only - never pull requests) over four creation
 windows: org lifetime, last 7 days, last 24 hours, last 3 hours, renders a fixed-format
-Arabic summary with the owner's approved standing text, and sends it through a
+English summary with the owner's approved standing text, and sends it through a
 Telegram bot to a configured forum topic. No data, names, or private content
 live in this repository; all bindings are secrets.
 
@@ -31,7 +31,7 @@ live in this repository; all bindings are secrets.
    live only inside the encrypted payload), and a fixed footer. Rich Messages are a Bot API 10.1+ feature with native
    tables; an earlier HTML `<pre>` design was retired after real-client pixel
    inspection showed clipping, and no image rendering is used anywhere.
-4. `src/sender.py` posts one `sendRichMessage` call (RTL, entity detection
+4. `src/sender.py` posts one `sendRichMessage` call (LTR, entity detection
    off) and verifies the receipt structurally: ok flag, message id, chat id,
    thread id, block count and types, full plain text of every block, and the
    table's exact cells, header flags, alignment, and border. Any mismatch

@@ -34,13 +34,13 @@ ORG_API = "https://api.github.com/orgs/"
 REPO_API = "https://api.github.com/repos/"  # issue events live under /repos/{owner}/{repo}, NOT /orgs/... (404)
 MAX_EVENT_PAGES = 500  # hard budget guard; measured whole-org need is ~85
 
-# (Arabic row label, window length or None for org lifetime). Labels are the
-# owner's exact wording; ordering is the owner's example order.
+# (English row label, window length or None for org lifetime). Labels are the
+# English translations preserve the existing window order and durations.
 WINDOWS = [
-    ("منذ البداية", None),
-    ("آخر ٧ أيام", dt.timedelta(days=7)),
-    ("آخر ٢٤ ساعة", dt.timedelta(hours=24)),
-    ("آخر ٣ ساعات", dt.timedelta(hours=3)),
+    ("Since the beginning", None),
+    ("Last 7 days", dt.timedelta(days=7)),
+    ("Last 24 hours", dt.timedelta(hours=24)),
+    ("Last 3 hours", dt.timedelta(hours=3)),
 ]
 
 

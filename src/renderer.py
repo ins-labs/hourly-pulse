@@ -54,7 +54,7 @@ def _heading(text, size):
 
 
 def _ratio(total, closed):
-    return "{:.1f}%".format(100 * closed / total) if total else "غير متاحة"
+    return "{:.1f}%".format(100 * closed / total) if total else "N/A"
 
 
 def render_blocks(counts, fixed_text, generated=None):
@@ -80,12 +80,12 @@ def render_blocks(counts, fixed_text, generated=None):
     # owner column order/headers, exact 04:44:07: each metric next to its own
     # ratio, no "(الى اجمالي الفترة)" wording in the headers.
     cells = [[
-        _cell("الفترة", True),
-        _cell("الإجمالي", True),
-        _cell("المفتوح", True),
-        _cell("نسبة المفتوح", True),
-        _cell("المغلق", True),
-        _cell("نسبة الغلق", True),
+        _cell("Period", True),
+        _cell("Total", True),
+        _cell("Open", True),
+        _cell("Open ratio", True),
+        _cell("Closed", True),
+        _cell("Closed ratio", True),
     ]]
     for row in counts["rows"]:
         # owner definitions, final 04:15:14: الإجمالي = created in the window
@@ -102,8 +102,8 @@ def render_blocks(counts, fixed_text, generated=None):
         ])
 
     blocks = [
-        _heading("نبضة " + stamp + " القاهرة", 2),
-        _heading("مهام " + counts["org"] + " على GitHub", 3),
+        _heading("Pulse " + stamp + " Cairo", 2),
+        _heading(counts["org"] + " tasks on GitHub", 3),
         {"type": "table", "is_bordered": True, "cells": cells},
     ]
     # Fixed text verbatim: split on blank-line runs into paragraph blocks
@@ -111,7 +111,7 @@ def render_blocks(counts, fixed_text, generated=None):
     # paragraph ever starts or ends with separator newlines. Wording untouched.
     for chunk in re.split(r"\n[ \t]*\n(?:[ \t]*\n)*", fixed_text.strip()):
         blocks.append(_para(chunk))
-    blocks.append(_para("إعداد هذه النسخة لا يثبت نشرها أو وصولها."))
+    blocks.append(_para("Preparing this version does not prove it was published or received."))
 
     if len(blocks) > MAX_BLOCKS:
         raise ValueError("block budget exceeded")
