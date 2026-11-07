@@ -313,6 +313,18 @@ class SenderTests(unittest.TestCase):
         self.assertEqual(rm["blocks"], self.blocks)
         self.assertNotIn("text", captured)
 
+    def test_receipt_rejects_collapsed_table_columns(self):
+        receipt = rich_receipt("-100123", "43", self.blocks)
+        table = receipt["result"]["rich_message"]["blocks"][2]
+        for row in table["cells"]:
+            # Same flattened text, different cell boundaries. A structural
+            # receipt must not accept separators smuggled into one cell.
+            row[0]["text"] = "\x1f".join(cell["text"] for cell in row)
+            del row[1:]
+        with self.assertRaisesRegex(ValueError, "table column-count mismatch"):
+            sender.send_rich("tok", "-100123", "43", self.blocks,
+                             opener=opener_of([receipt]))
+
     def test_failed_receipt_never_retries(self):
         calls = []
         def opener(req, timeout=30):
