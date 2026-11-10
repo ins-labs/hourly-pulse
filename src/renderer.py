@@ -103,7 +103,7 @@ def render_blocks(counts, fixed_text, generated=None):
 
     blocks = [
         _heading("Pulse " + stamp + " Cairo", 2),
-        _heading(counts["org"] + " tasks on GitHub", 3),
+        _heading(counts["org"] + " tasks on GitHub (active repositories)", 3),
         {"type": "table", "is_bordered": True, "cells": cells},
     ]
     # Fixed text verbatim: split on blank-line runs into paragraph blocks
