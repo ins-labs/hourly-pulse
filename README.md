@@ -22,8 +22,9 @@ live in this repository; all bindings are secrets.
    would miss issues closed then reopened (such issues exist in this org). A
    hard page budget fails the run if event volume ever explodes. Partial,
    malformed, or mutually inconsistent responses fail the run; no cached
-   numbers are ever reused. Coverage is every repository visible to the read
-   account.
+   numbers are ever reused. Coverage is every unarchived repository visible to the read
+   account. Archived repositories are excluded from both search counts and
+   close-event scans; the rendered heading states active-repository scope.
 2. `src/crypto_util.py` decrypts `content/standing_text.enc` at runtime with
    `PULSE_TEXT_KEY`. Failure fails the run.
 3. `src/renderer.py` builds explicit Telegram Rich Message blocks: a

@@ -122,7 +122,7 @@ class CollectorTests(unittest.TestCase):
             ]],
         }
         count_bodies = [count_body(10), count_body(4)] + [count_body(5), count_body(2)] + [count_body(3), count_body(1)] + [count_body(1), count_body(0)]
-        opener = make_opener([{"name": "r1"}, {"name": "r2"}], events, count_bodies)
+        opener = make_opener([{"name": "r1", "archived": False}, {"name": "r2", "archived": False}], events, count_bodies)
         out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
         self.assertEqual(out["org"], "some-org")
         self.assertTrue(out["org_created_at"].startswith("2024-05-01"))
@@ -133,28 +133,66 @@ class CollectorTests(unittest.TestCase):
                          [(10, 4, 4), (5, 2, 3), (3, 1, 2), (1, 0, 2)])
 
     def test_window_qualifier(self):
-        opener = make_opener([{"name": "r1"}], {"r1": [[]]}, [count_body(0)] * 8)
+        opener = make_opener([{"name": "r1", "archived": False}], {"r1": [[]]}, [count_body(0)] * 8)
         out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
         import urllib.parse
         search_urls = [u for u in opener.seen if "/search/issues" in u]
         self.assertEqual(len(search_urls), 8)
         queries = [urllib.parse.parse_qs(urllib.parse.urlparse(u).query)["q"][0] for u in search_urls]
-        self.assertEqual(queries[0], "org:some-org is:issue")
-        self.assertEqual(queries[1], "org:some-org is:issue is:open")
-        self.assertEqual(queries[2], "org:some-org is:issue created:>=2026-10-18T02:07:00+03:00")
-        self.assertEqual(queries[3], "org:some-org is:issue created:>=2026-10-18T02:07:00+03:00 is:open")
-        self.assertEqual(queries[4], "org:some-org is:issue created:>=2026-10-24T02:07:00+03:00")
-        self.assertEqual(queries[6], "org:some-org is:issue created:>=2026-10-24T23:07:00+03:00")
+        self.assertEqual(queries[0], "org:some-org is:issue archived:false")
+        self.assertEqual(queries[1], "org:some-org is:issue archived:false is:open")
+        self.assertEqual(queries[2], "org:some-org is:issue archived:false created:>=2026-10-18T02:07:00+03:00")
+        self.assertEqual(queries[3], "org:some-org is:issue archived:false created:>=2026-10-18T02:07:00+03:00 is:open")
+        self.assertEqual(queries[4], "org:some-org is:issue archived:false created:>=2026-10-24T02:07:00+03:00")
+        self.assertEqual(queries[6], "org:some-org is:issue archived:false created:>=2026-10-24T23:07:00+03:00")
         self.assertTrue(any("/repos/some-org/r1/issues/events" in u for u in opener.seen))
 
     def test_events_pagination(self):
         page1 = [ev_other("labeled", 1000 + i, "2026-10-24T00:00:00Z") for i in range(100)]
         page2 = [ev_closed(7, "2026-10-24T01:00:00Z")]
-        opener = make_opener([{"name": "r1"}], {"r1": [page1, page2]}, [count_body(0)] * 8)
+        opener = make_opener([{"name": "r1", "archived": False}], {"r1": [page1, page2]}, [count_body(0)] * 8)
         out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
         self.assertEqual(out["rows"][0]["closed"], 1)
         pages = [u for u in opener.seen if "issues/events" in u]
         self.assertEqual(len(pages), 2)
+
+    def test_archived_repo_excluded_without_event_request(self):
+        opener = make_opener(
+            [{"name": "r1", "archived": False}, {"name": "retired", "archived": True}],
+            {"r1": [[ev_closed(1, "2026-10-24T22:00:00Z")]],
+             "retired": [[ev_closed(2, "2026-10-24T22:00:00Z")]]},
+            [count_body(1)] * 8)
+        out = collector.collect_counts("t", "some-org", opener=opener, now=NOW)
+        self.assertEqual(out["rows"][0]["closed"], 1)
+        self.assertFalse(any("/retired/issues/events" in u for u in opener.seen))
+        import urllib.parse
+        queries = [urllib.parse.parse_qs(urllib.parse.urlparse(u).query)["q"][0]
+                   for u in opener.seen if "/search/issues" in u]
+        self.assertEqual(len(queries), 8)
+        self.assertTrue(all(q.count("archived:false") == 1 for q in queries))
+
+    def test_repo_pagination_keeps_active_only(self):
+        pages = [[{"name": "old" + str(i), "archived": True} for i in range(100)],
+                 [{"name": "active", "archived": False}, {"name": "old100", "archived": True}]]
+        seen = []
+        def opener(req, timeout=30):
+            seen.append(req.full_url)
+            return Response(json.dumps(pages[len(seen) - 1]))
+        self.assertEqual(collector._list_repos("t", "some-org", opener), ["active"])
+        self.assertEqual(len(seen), 2)
+        self.assertIn("page=2", seen[1])
+
+    def test_repo_archived_flag_must_be_real_boolean(self):
+        malformed = [{"name": "r1"}, {"name": "r1", "archived": None},
+                     {"name": "r1", "archived": 0}, {"name": "r1", "archived": "false"},
+                     {"name": "r1", "archived": []}, "not-a-repo"]
+        for repo in malformed:
+            with self.subTest(repo=repo):
+                opener = make_opener([repo], {}, [])
+                with self.assertRaises(ValueError):
+                    collector.collect_counts("t", "some-org", opener=opener, now=NOW)
+                self.assertFalse(any("/issues/events" in u or "/search/issues" in u
+                                     for u in opener.seen))
 
     def test_fail_closed(self):
         with self.assertRaises(ValueError):
@@ -169,16 +207,16 @@ class CollectorTests(unittest.TestCase):
             collector.collect_counts("t", "o", opener=make_opener({"oops": 1}, {}, []))
         # events response not a list
         with self.assertRaises(ValueError):
-            collector.collect_counts("t", "o", opener=make_opener([{"name": "r1"}], {"r1": [{"oops": 1}]}, []))
+            collector.collect_counts("t", "o", opener=make_opener([{"name": "r1", "archived": False}], {"r1": [{"oops": 1}]}, []))
         # close event missing issue id
         with self.assertRaises(ValueError):
-            collector.collect_counts("t", "o", opener=make_opener([{"name": "r1"}], {"r1": [[{"event": "closed", "created_at": "2026-10-24T00:00:00Z", "issue": {}}]]}, []))
+            collector.collect_counts("t", "o", opener=make_opener([{"name": "r1", "archived": False}], {"r1": [[{"event": "closed", "created_at": "2026-10-24T00:00:00Z", "issue": {}}]]}, []))
         # event page budget exceeded
         saved = collector.MAX_EVENT_PAGES
         collector.MAX_EVENT_PAGES = 1
         try:
             with self.assertRaises(ValueError):
-                collector.collect_counts("t", "o", opener=make_opener([{"name": "r1"}], {"r1": [[ev_other("labeled", i, "2026-10-24T00:00:00Z") for i in range(100)]]}, []))
+                collector.collect_counts("t", "o", opener=make_opener([{"name": "r1", "archived": False}], {"r1": [[ev_other("labeled", i, "2026-10-24T00:00:00Z") for i in range(100)]]}, []))
         finally:
             collector.MAX_EVENT_PAGES = saved
         # search malformed / incomplete / still-open above opened / window above lifetime
@@ -204,7 +242,7 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(types, ["heading", "heading", "table", "paragraph", "paragraph"])
         self.assertEqual(blocks[0]["text"], "Pulse 2026-10-25 02:07:00 Cairo")
         self.assertEqual(blocks[0]["size"], 2)
-        self.assertEqual(blocks[1]["text"], "some-org tasks on GitHub")
+        self.assertEqual(blocks[1]["text"], "some-org tasks on GitHub (active repositories)")
         self.assertEqual(blocks[1]["size"], 3)
         table = blocks[2]
         self.assertTrue(table["is_bordered"])

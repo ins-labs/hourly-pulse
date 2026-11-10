@@ -59,7 +59,7 @@ def _get_json(url, token, opener):
 
 def _fetch_count(token, org, extra_qualifier, opener):
     query = urllib.parse.urlencode(
-        {"q": "org:" + org + " is:issue" + extra_qualifier, "per_page": 1}
+        {"q": "org:" + org + " is:issue archived:false" + extra_qualifier, "per_page": 1}
     )
     item = _get_json(SEARCH_API + "?" + query, token, opener)
     count = item.get("total_count")
@@ -87,10 +87,14 @@ def _list_repos(token, org, opener):
         if not isinstance(batch, list):
             raise ValueError("unverified repos response")
         for repo in batch:
-            name = repo.get("name")
-            if not isinstance(name, str) or not name:
+            if not isinstance(repo, dict):
                 raise ValueError("unverified repo entry")
-            repos.append(name)
+            name = repo.get("name")
+            archived = repo.get("archived")
+            if not isinstance(name, str) or not name or type(archived) is not bool:
+                raise ValueError("unverified repo entry")
+            if not archived:
+                repos.append(name)
         if len(batch) < 100:
             return repos
         page += 1
